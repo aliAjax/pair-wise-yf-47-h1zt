@@ -10,6 +10,7 @@ import { useTranslations } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import { fetchStations } from "../lib/query";
 import { MapPanel } from "../components/MapPanel";
+import CapacityPanel from "../components/CapacityPanel";
 import { useIncidentStore, type Role, type ShuttlePlan, type Station, type StationStatus } from "../store/incident";
 
 const planSchema = z.object({ stations: z.array(z.string()).min(1, "至少选择两个接驳站"), vehicles: z.number().min(1).max(80), interval: z.number().min(2).max(30), operator: z.string().min(2), note: z.string().min(2) });
@@ -41,7 +42,7 @@ function Dashboard() {
   return <div className="shell">
     <aside className="side">
       <div className="brand"><b>RAIL OPS</b><span>应急协同</span></div>
-      <nav>{["总览", "事件时间线", "接驳计划", "确认中心"].map((item) => <button className={panel === item ? "active" : ""} key={item} onClick={() => setPanel(item)}>{item}</button>)}</nav>
+      <nav>{["总览", "事件时间线", "接驳计划", "运力账", "确认中心"].map((item) => <button className={panel === item ? "active" : ""} key={item} onClick={() => setPanel(item)}>{item}</button>)}</nav>
       <div className="side-status"><small>系统连接</small><b className={state.online ? "ok" : "warn"}>{state.online ? "在线" : "弱网降级"}</b><span>最近缓存 32 秒前</span></div>
     </aside>
     <main>
@@ -54,6 +55,7 @@ function Dashboard() {
       </section>}
       {panel === "事件时间线" && <Card title="处置时间线" extra={<Space><Select value="响应" options={[{value:"响应"},{value:"接驳"},{value:"恢复"}]} /><Button type="primary" onClick={() => state.addTimeline({ actor: state.role, action: "更新处置", detail: "现场处置信息已同步至协同工作台", phase: "响应" })}>添加处置记录</Button></Space>}><div className="timeline-grid"><Timeline items={state.timeline.map((item) => ({ color: item.phase === "恢复" ? "green" : item.phase === "接驳" ? "blue" : "red", children: <div><b>{item.action}</b><Tag>{item.actor}</Tag><p>{item.detail}</p><small>{format(new Date(item.time), "MM-DD HH:mm:ss")} · {item.phase}</small></div> }))} /><Card size="small" title="处置检查"><p>车站封闭与广播口径已确认。</p><p>接驳车辆到场后需调度员和公交负责人双方确认。</p><p>恢复行车前检查区间水位和站台安全。</p></Card></div></Card>}
       {panel === "接驳计划" && <Card title="公交接驳计划" extra={<Button type="primary" disabled={state.role !== "公交接驳负责人" && state.role !== "调度员"} onClick={() => setModalOpen(true)}>新建计划</Button>}><Table rowKey="id" pagination={false} dataSource={state.plans} columns={[{title:"接驳站",dataIndex:"stations",render:(v:string[])=>v.join(" → ")},{title:"车辆",dataIndex:"vehicles"},{title:"间隔",dataIndex:"interval",render:(v:number)=>`${v} 分钟`},{title:"运营方",dataIndex:"operator"},{title:"确认",dataIndex:"approvals",render:(v:string[])=>v.length? v.map((x)=><Tag key={x} color="green">{x}</Tag>) : <Tag>未确认</Tag>},{title:"状态",dataIndex:"status",render:(v)=> <Tag color={v==="已确认"||v==="已执行"?"green":v==="待确认"?"orange":"default"}>{v}</Tag>},{title:"操作",render:(_,record:ShuttlePlan)=><Space><Button size="small" disabled={record.status!=="草稿"} onClick={()=>state.submitPlan(record.id)}>提交确认</Button><Button size="small" disabled={record.status!=="待确认"||state.role==="客服主管"} onClick={()=>state.approvePlan(record.id,state.role)}>确认</Button><Button size="small" type="primary" disabled={record.status!=="已确认"} onClick={()=>state.executePlan(record.id)}>执行</Button></Space>}]} /></Card>}
+      {panel === "运力账" && <CapacityPanel />}
       {panel === "确认中心" && <Card title="跨岗位确认中心"><Timeline items={state.plans.map((plan) => ({ children: <div className="approval"><b>{plan.stations.join(" → ")}</b><Tag>{plan.status}</Tag><p>{plan.vehicles} 辆，间隔 {plan.interval} 分钟，{plan.note}</p><small>已确认：{plan.approvals.join("、") || "暂无"}</small></div> }))} /><Button disabled={state.online || !state.pendingActions.length} onClick={state.syncActions}>人工确认并同步本地队列</Button></Card>}
     </main>
     <Modal title="新建接驳计划" open={modalOpen} onCancel={() => setModalOpen(false)} onOk={handleSubmit(submitPlan)} okText="保存草稿"><Form layout="vertical"><Form.Item label="接驳站" validateStatus={errors.stations ? "error" : ""} help={errors.stations?.message}><Controller name="stations" control={control} render={({ field }) => <Select mode="multiple" {...field} options={state.stations.map((item) => ({ value: item.name, label: item.name }))} />} /></Form.Item><Space><Form.Item label="车辆数"><Controller name="vehicles" control={control} render={({ field }) => <InputNumber {...field} min={1} />} /></Form.Item><Form.Item label="发车间隔"><Controller name="interval" control={control} render={({ field }) => <InputNumber {...field} min={2} addonAfter="分钟" />} /></Form.Item></Space><Form.Item label="运营方"><Controller name="operator" control={control} render={({ field }) => <Input {...field} />} /></Form.Item><Form.Item label="计划说明"><Controller name="note" control={control} render={({ field }) => <Input.TextArea {...field} />} /></Form.Item></Form></Modal>
